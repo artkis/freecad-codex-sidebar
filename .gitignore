@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+state/
+workspace/
+*.token
+*.log
+*.FCStd
+*.FCBak
+.env*
+artifacts/
+local-settings.json
+docs/task-contract.md
+*.FCStd1
