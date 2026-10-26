@@ -99,6 +99,5 @@ Start with [CONTRIBUTING.md](CONTRIBUTING.md). Small, tested improvements and
 native compatibility reports are useful, especially around stop/resume,
 document targeting and reliable saved-file checks.
 
-The [sponsorship plan](docs/SPONSORSHIP.md) describes possible funding for
-maintenance and model testing. Funding is not active yet; no donation or
-payment link has been enabled.
+See [Support development](docs/SPONSORSHIP.md) for ways to help. Financial
+sponsorship is not currently available.
