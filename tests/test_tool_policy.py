@@ -43,7 +43,7 @@ class ToolPolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(GuardError, 'outside'):
             validate_arguments(self.task, 'export_model', {'filename': '../outside.step'}, lambda ref: True)
         result = validate_arguments(self.task, 'export_model', {'filename': 'owned.step'}, lambda ref: True)
-        self.assertEqual(str(self.root / 'owned.step'), result['filename'])
+        self.assertEqual(str((self.root / 'owned.step').resolve()), result['filename'])
 
     def test_foreign_document_and_object_are_rejected(self):
         for args in ({'document_name': 'Other'}, {'object_name': 'ForeignBox'}, {'objects': ['Owned', 'ForeignBox']}):

@@ -146,7 +146,7 @@ class SupervisorGateTests(unittest.TestCase):
     def test_native_object_export_normalizes_workspace_path_before_handler(self):
         self.worker._commander_tools.add('export_model')
         self.gate.execute('export_model', '{"filename":"output.step","objects":["OwnedBox"]}')
-        self.assertEqual(str(Path(self.temp.name) / 'output.step'), self.executions[-1][1]['filename'])
+        self.assertEqual(str((Path(self.temp.name) / 'output.step').resolve()), self.executions[-1][1]['filename'])
 
     def test_resume_reuses_real_provider_thread_after_native_count_and_phase_change(self):
         module = self.module
