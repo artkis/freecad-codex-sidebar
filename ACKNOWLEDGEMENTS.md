@@ -8,6 +8,8 @@ ideas; acknowledgement does not imply that a feature has been implemented.
 | --- | --- |
 | [FreeCAD](https://www.freecad.org/) | Native CAD application and Python/Qt environment. Installed separately. |
 | [FreeCAD AI — ghbalf](https://github.com/ghbalf/freecad-ai) | Separately installed workbench whose interfaces the companion imports. Its Plan/Act workflow, selection references and structured tools also informed this integration. Code: LGPL-2.1-or-later; icons: CC0-1.0. Inspected commit: `08d637d145dbc12397599aedafa93ada2dd35f92`. |
+| [FreeCAD AI Assistant — iplayfast and contributors](https://github.com/iplayfast/FreeCAD-AI-Assistant/tree/940084d36cca6677c44eba3150184f60ff087f6f) | Comparative source research for a shared tool registry, tool profiles, operation lookup and typed inspection. LGPL-2.1-or-later; no source copied or workbench bundled. |
+| [ChatCAD — Vittuu and contributors](https://github.com/Vittuu/freecad-chatcad/tree/49d3cce25f878e08cf3f970e1ab1bca5d4604346) | Direct comparison for embedded Codex CLI chat, tool-step cards, selection context and image annotation. Package declares LGPL-2.1; no source or assets copied. |
 | [SolidCraft — Tangency Labs and contributors](https://github.com/tangency-labs/solidcraft/blob/348bbc1dfa99a4444c6d15c49d0f9affdb6af0c0/docs/agent-chat.md) | Design inspiration for an agent sidebar, visible tool progress, cancellation/steering, bounded work, viewport context and grouped undo. Research reference only; no SolidCraft source or assets copied. Repository code offers MIT OR Apache-2.0, subject to its third-party notices. |
 | [Autodesk Fusion / Autodesk Assistant](https://help.autodesk.com/view/fusion360/ENU/?contextid=LEARNINGPANEL) | Public documentation informed the distinction between explaining, inspecting, guiding and acting on a CAD task. Idea reference only; no Autodesk software, source or assets included. |
 | [freecad-mcp — neka-nat and contributors](https://github.com/neka-nat/freecad-mcp/tree/8babe9927ce8e6e8fe7dd6ae2ffa2c93776e845a) | Research reference for a separate native addon/client bridge. MIT; no code copied into this repository. |
@@ -17,6 +19,8 @@ ideas; acknowledgement does not imply that a feature has been implemented.
 The companion's own code is MIT licensed. Upstream licenses and notices remain
 applicable to their own projects; see [NOTICE.md](NOTICE.md) and the
 [feature research ledger](docs/feature-adoption.md) for provenance and limits.
+The [expanded landscape review](docs/landscape-research.md) records additional
+projects considered and the depth of each review.
 
 FreeCAD Codex Sidebar is an independent project. It is not affiliated with,
 sponsored by or endorsed by FreeCAD, Tangency Labs, Autodesk, OpenAI or the other

@@ -1,5 +1,8 @@
 # Sidebar feature adoption — 26 October 2026
 
+See the [expanded landscape review](landscape-research.md) for direct FreeCAD
+assistant comparisons, a wider candidate inventory and revised priorities.
+
 Research scope: improve the FreeCAD Codex companion using documented CAD-assistant patterns and inspected open-source components. No live CAD changes, package installation, or third-party code copying occurred in this research. “Adopt now” means the next implementation priority, not a completed feature.
 
 ## What was verified

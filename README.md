@@ -88,6 +88,11 @@ See [acknowledgements](ACKNOWLEDGEMENTS.md),
 [dependency notices](NOTICE.md). Fusion and SolidCraft interaction patterns
 are references; their source code and artwork are not bundled.
 
+The [expanded landscape review](docs/landscape-research.md) compares direct
+alternatives including ChatCAD and iplayfast's FreeCAD AI Assistant. This
+companion is one experimental approach; chat and native CAD tools already
+exist in those projects and in the upstream workbench.
+
 ## Contributing and supporting development
 
 Start with [CONTRIBUTING.md](CONTRIBUTING.md). Small, tested improvements and
