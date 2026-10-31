@@ -113,7 +113,7 @@ base. ChatCAD deserves a comparative fixture before any broader UI rebuild.
 
 Priorities for the next development pass:
 
-1. **Stable task tool profiles.** Our current default exposes 51 tools. Select
+1. **Stable task tool profiles.** At this review revision, the default exposed 51 tools. Select
    the smallest useful set before starting a task and keep its schema stable
    across Resume. Enforce scope independently of what is advertised.
 2. **Typed, bounded inspection.** Add document-qualified shape, solver,
@@ -138,3 +138,13 @@ performance winner is claimed without that evidence.
 No source from the newly reviewed projects has been copied. LGPL components
 cannot be silently relabeled MIT. Any future reused files need their original
 license, provenance and distribution obligations preserved.
+
+
+## Implementation follow-up — 31 October 2026
+
+The first priority is implemented in [task tool profiles](task-tool-profiles.md):
+explicit CAD profiles/exact required-tool lists, independent dispatch permission
+checks, and a frozen schema contract with Resume preflight. The automated
+results and native limitations are in [verification.md](verification.md).
+The 51-tool statement above describes the October 26 baseline, not the new
+Inspect default. The other priorities remain separate work.
