@@ -84,6 +84,9 @@ class Task:
     max_tool_turns: int = 100
     system_prompt: str = ""
     save_receipt: dict = field(default_factory=dict)
+    tool_profile: str = "inspect"
+    required_tools: list | None = None
+    tool_contract: dict = field(default_factory=dict)
 
 
 def file_stamp(path):
@@ -131,18 +134,33 @@ class TaskController:
         max_turns = payload.get('max_tool_turns', 100)
         if isinstance(max_turns, bool) or not isinstance(max_turns, int) or not 1 <= max_turns <= 500:
             raise GuardError('max_tool_turns must be an integer from 1 to 500')
+        # Import lazily to keep the policy/controller dependency acyclic.
+        try:
+            from .tool_profiles import TOOL_PROFILES, tool_names
+        except ImportError:
+            from tool_profiles import TOOL_PROFILES, tool_names
+        tool_profile = payload.get('tool_profile', 'inspect')
+        if not isinstance(tool_profile, str) or tool_profile not in TOOL_PROFILES:
+            raise GuardError('Unknown CAD tool profile')
+        allowed = tool_names(payload.get('allowed_tools', []), 'allowed_tools')
+        required = payload.get('required_tools')
+        required = None if required is None else tool_names(required, 'required_tools')
+        mode = payload.get('mode', 'act')
+        if mode not in ('act', 'plan'):
+            raise GuardError('Unknown task mode')
+        if mode == 'act' and tool_profile == 'custom' and not required:
+            raise GuardError('Custom profile requires nonempty required_tools')
         self.task = Task(uuid.uuid4().hex, self.revision.name,
                          self.revision.token, self.revision.token,
                          str(workspace), sources, prompt, model, effort,
                          title=str(payload.get("title", "CAD task")), max_seconds=timeout)
-        self.task.allowed_tools = list(payload.get("allowed_tools", []))
+        self.task.tool_profile = tool_profile
+        self.task.allowed_tools = allowed
+        self.task.required_tools = required
         self.task.reference_summary = str(payload.get("reference_summary", ""))[:6000]
         self.task.acceptance_criteria = list(payload.get("acceptance_criteria", []))
-        self.task.mode = payload.get("mode", "act")
+        self.task.mode = mode
         self.task.max_tool_turns = max_turns
-        if self.task.mode not in ("act", "plan"):
-            self.task = None
-            raise GuardError("Unknown task mode")
         return self.task
 
     def check(self, app_target, gui_target, generation=None):
@@ -285,3 +303,4 @@ class TaskController:
         return {"task": asdict(self.task) if self.task else None,
                 "target": self.revision.name if self.revision else None,
                 "revision": self.revision.token if self.revision else None}
+

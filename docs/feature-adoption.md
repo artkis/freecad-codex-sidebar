@@ -43,3 +43,36 @@ Licenses were checked from primary source files on 26 October 2026. These pins r
 - neka-nat/freecad-mcp `8babe9927ce8e6e8fe7dd6ae2ffa2c93776e845a`: [MIT](https://github.com/neka-nat/freecad-mcp/blob/8babe9927ce8e6e8fe7dd6ae2ffa2c93776e845a/LICENSE).
 - yonosoft/freecad-mcp `ffdd89673887acd0c2c7c7261fb7df8e1880ff06`: [LGPL-2.1-or-later](https://github.com/yonosoft/freecad-mcp/blob/ffdd89673887acd0c2c7c7261fb7df8e1880ff06/LICENSE).
 - Codex ACP `a77829fecc87cebbb2e53782ce6795aee072adc8`: [Apache-2.0](https://github.com/agentclientprotocol/codex-acp/blob/a77829fecc87cebbb2e53782ce6795aee072adc8/LICENSE).
+
+
+## SolidCraft-to-FreeCAD implementation evidence — 31 October 2026
+
+Direction: adapt the interaction and control behavior to FreeCAD's existing
+Python + Qt/PySide sidebar and native document APIs. Do not port SolidCraft's
+Rust engine, replace FreeCAD's kernel, or introduce another model provider.
+This pass implements task-specific tool profiles, not a complete visual/UI
+rebuild, queued steering or grouped undo.
+
+Focused source review uses SolidCraft commit
+`045cfed6a7afc61c96bcf8169a634d37ba7d9479`:
+
+| Observed source | Adaptation / evidence limit |
+| --- | --- |
+| [agent_chat/gate.rs](https://github.com/tangency-labs/solidcraft/blob/045cfed6a7afc61c96bcf8169a634d37ba7d9479/crates/ui-egui/src/agent_chat/gate.rs) has a method allowlist and a command verdict before dispatch, including file/design/undo bounds. | Keep tool advertising separate from enforcement. FreeCAD's gate checks explicit target, workspace, revision and frozen task permissions; no claim that our policies are identical. |
+| [agent_chat/context.rs](https://github.com/tangency-labs/solidcraft/blob/045cfed6a7afc61c96bcf8169a634d37ba7d9479/crates/ui-egui/src/agent_chat/context.rs) builds bounded selection context with item kinds and omission counts. | Retain FreeCAD's explicit document/reference packet. A fuller selection-chip UI remains future work; static source does not prove native behavior. |
+| [mcp/tools.rs](https://github.com/tangency-labs/solidcraft/blob/045cfed6a7afc61c96bcf8169a634d37ba7d9479/crates/mcp/src/tools.rs) separates inspection tools from commands and includes selective command discovery. | Use typed FreeCAD tools in explicit task profiles. This pass adds no broad execute-command dispatcher and does not claim SolidCraft implements these same profiles. |
+| [agent-chat.md](https://github.com/tangency-labs/solidcraft/blob/045cfed6a7afc61c96bcf8169a634d37ba7d9479/docs/agent-chat.md) describes per-design context, Stop/queued steering, activity rows and own-account runtime use. | Existing account, ownership and Stop/Resume route retained. Activity-card polish and queued steering are not implemented by this patch. |
+
+The pinned MIT and Apache-2.0 licenses were inspected. No SolidCraft source
+code or artwork was copied; this is an independent Python implementation of
+selected behavior. The upstream FreeCAD AI workbench remains a separate LGPL
+dependency. Frozen task-specific profiles also follow the direct FreeCAD
+comparison in the landscape review, not an invented SolidCraft capability.
+
+REA identity was resolved to [morluto/rea](https://github.com/morluto/rea).
+Its [workflow skill at d48e472](https://github.com/morluto/rea/blob/d48e472fa6a664cacbb400560e673533005795ce/.agents/skills/reverse-engineer-anything/SKILL.md)
+routes ordinary complete-source analysis to normal repository tools; native
+REA analysis is for shipped artifacts or runtime evidence beyond available
+source. This pass follows that routing and source/evidence separation. No REA
+MCP runtime was available or invoked here, and no installed desktop plugin was
+changed. This is source inspection, not binary or live-app REA verification.

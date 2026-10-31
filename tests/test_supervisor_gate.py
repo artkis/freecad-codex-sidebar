@@ -72,6 +72,12 @@ class SupervisorGateTests(unittest.TestCase):
         ctl.bind("Target")
         ctl.start({"target_document": "Target", "workspace": self.temp.name,
                    "expected_revision": ctl.revision.token, "prompt": "Native fixture"}, "model", "low")
+        # This fixture isolates native dispatch; worker-creation tests below
+        # exercise production contract construction with a synthetic registry.
+        ctl.task.tool_contract = {'settings': {'profile': ctl.task.tool_profile,
+            'required_tools': ctl.task.required_tools, 'allowed_tools': ctl.task.allowed_tools,
+            'mode': ctl.task.mode}, 'names': ['native_tool', 'export_model', 'create_sketch'],
+                                 'permissions': ['native_tool', 'export_model', 'create_sketch']}
         self.worker = Worker(ctl.task.generation)
         self.executions = []
         self.tool_result = SimpleNamespace(success=True, output="executed", error="")
@@ -151,6 +157,7 @@ class SupervisorGateTests(unittest.TestCase):
     def test_resume_reuses_real_provider_thread_after_native_count_and_phase_change(self):
         module = self.module
         task = module._controller.task
+        task.tool_contract = {}
         task.mode = 'plan'  # No native registry or inference in this regression.
         task.model = 'test-model'
         task.effort = 'medium'
@@ -238,6 +245,117 @@ class SupervisorGateTests(unittest.TestCase):
         self.assertEqual('low', cfg.profiles['Codex Economical'].thinking)
         self.assertEqual('low', cfg.profiles['Codex Economical'].params['reasoning_effort'])
 
+    def scoped_worker(self):
+        from test_tool_profiles import synthetic_registry, SyntheticTool
+        module = self.module
+        task = module._controller.task
+        task.tool_contract = {}
+        task.tool_profile = 'solid'
+        task.required_tools = ['create_body', 'measure']
+        registry = synthetic_registry()
+        registry_module = ModuleType('freecad_ai.tools.registry')
+        registry_module.ToolDefinition = SyntheticTool
+        registry_module.ToolParam = lambda name, type, description, **kw: dict(name=name, type=type)
+        patcher = patch.dict(sys.modules, {'freecad_ai.tools.registry': registry_module})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        captured = []
+        def start(conversation, prompt, **kwargs):
+            captured.append(kwargs['registry'].to_openai_schema())
+            worker = Worker(task.generation)
+            worker.error_occurred = SimpleNamespace(connect=lambda callback: None)
+            module._dock._worker = worker
+        module._gate = self.gate
+        module._originals['_start_worker'] = start
+        module._start_scoped_worker(None, 'Synthetic contract', registry=registry)
+        self.worker = module._dock._worker
+        self.gate._sender = self.worker
+        return registry, captured
+
+    def test_advertised_tools_do_not_grant_execution_permission(self):
+        self.scoped_worker()
+        # Simulate a buggy/hostile caller advertising arbitrary execution.
+        self.worker._commander_tools = {'execute_code'}
+        self.gate.execute('execute_code', '{"code":"pass"}')
+        self.assertFalse(self.executions)
+        self.assertIn('frozen task permissions', self.worker.results[-1]['error'])
+
+    def test_permitted_but_unselected_tool_is_rejected_at_native_gate(self):
+        self.scoped_worker()
+        task = self.module._controller.task
+        self.assertIn('pad_sketch', task.tool_contract['permissions'])
+        self.assertNotIn('pad_sketch', task.tool_contract['names'])
+        self.worker._commander_tools = {'pad_sketch'}
+        self.gate.execute('pad_sketch', '{}')
+        self.assertIn('frozen task permissions', self.worker.results[-1]['error'])
+
+    def test_act_resume_preserves_schema_and_real_provider_thread(self):
+        from test_tool_profiles import SyntheticTool
+        module = self.module
+        registry, captured = self.scoped_worker()
+        proxy = ProviderProxy(client_factory=FakeClient, cwd=self.temp.name, turn_timeout=10)
+        self.addCleanup(proxy.close)
+        proxy.start()
+        body = {'model': 'test-model', 'reasoning_effort': 'medium', 'tools': captured[-1],
+                'messages': [{'role': 'system', 'content': 'Synthetic contract'},
+                             {'role': 'user', 'content': 'Create and measure synthetic body'}]}
+        proxy.prepare(body)
+        original_thread = proxy.thread_id
+        proxy.cancel()
+        proxy.notification({'method': 'turn/completed', 'params': {'threadId': proxy.thread_id,
+                            'turn': {'id': proxy.turn_id, 'status': 'interrupted'}}})
+        module._controller.stop()
+        module._controller.reconcile('Target', 'Target')
+        module._controller.resume('Target', 'Target')
+        registry.register(SyntheticTool('new_unrelated_operation'))
+        registry.tools = dict(reversed(list(registry.tools.items())))
+        module._start_scoped_worker(None, 'Synthetic contract', registry=registry)
+        self.assertEqual(captured[0], captured[1])
+        proxy.resume(True)
+        body['tools'] = captured[-1]
+        body['messages'].append({'role': 'user', 'content': 'Target inspected. Continue.'})
+        proxy.prepare(body)
+        self.assertEqual(original_thread, proxy.thread_id)
+        self.assertEqual(1, sum(method == 'thread/start' for method, _ in proxy.client.requests))
+
+    def test_schema_drift_blocks_resume_before_provider_or_worker(self):
+        module = self.module
+        registry, captured = self.scoped_worker()
+        module._controller.stop()
+        module._controller.reconcile('Target', 'Target')
+        registry.get('measure').description = 'Changed native contract'
+        module._native_registry = lambda task: registry
+        module.provider = lambda *args: self.fail('Provider resumed before schema validation')
+        with self.assertRaisesRegex(RuntimeError, 'schema changed'):
+            module.resume()
+        self.assertEqual(1, len(captured))
+        self.assertEqual('reconciled', module._controller.task.status)
+
+    def test_current_permissions_are_checked_independently_of_worker_advertisement(self):
+        self.scoped_worker()
+        self.module._controller.task.allowed_tools = ['measure']
+        self.gate.execute('create_body', '{}')
+        self.assertIn('scope changed', self.worker.results[-1]['error'])
+
+    def test_plan_start_freezes_empty_tools_and_cannot_resume_as_act(self):
+        module = self.module
+        task = module._controller.task
+        task.tool_contract = {}
+        task.mode = 'plan'
+        module._gate = self.gate
+        self.worker.error_occurred = SimpleNamespace(connect=lambda callback: None)
+        module._originals['_start_worker'] = lambda *args, **kw: None
+        module._start_scoped_worker(None, 'Plan fixture', registry=None)
+        self.assertEqual([], task.tool_contract['names'])
+        self.assertEqual(set(), self.worker._commander_tools)
+        module._controller.stop()
+        module._controller.reconcile('Target', 'Target')
+        task.mode = 'act'
+        module.provider = lambda *args: self.fail('Provider must not resume changed mode')
+        with self.assertRaisesRegex(RuntimeError, 'scope changed'):
+            module.resume()
+
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -19,12 +19,14 @@ except ImportError:
 try:
     from .task_controller import TaskController, GuardError
     from .document_guard import DocumentObserver
-    from .tool_policy import permitted_tools, validate_arguments, validate_selection, output_path
+    from .tool_policy import validate_arguments, validate_selection, output_path
+    from .tool_profiles import TOOL_PROFILES, ScopedRegistry, check_scope, freeze_plan
     from .provider_proxy import default_token_path
 except ImportError:
     from task_controller import TaskController, GuardError
     from document_guard import DocumentObserver
-    from tool_policy import permitted_tools, validate_arguments, validate_selection, output_path
+    from tool_policy import validate_arguments, validate_selection, output_path
+    from tool_profiles import TOOL_PROFILES, ScopedRegistry, check_scope, freeze_plan
     from provider_proxy import default_token_path
 
 ROOT = Path(__file__).resolve().parent
@@ -36,6 +38,7 @@ _controller = TaskController()
 _observer = None
 _dock = _gate = _timer = _label = _choice = _target = _workspace = _sources = None
 _box = None
+_tool_choice = None
 _proxy = {}
 _process = None
 _tool_inflight = False
@@ -159,6 +162,11 @@ class ToolGate(QtCore.QObject):
             _controller.check(*_active_names(), generation=getattr(worker, '_commander_generation', -1))
             if _controller.revision.recompute_depth:
                 raise GuardError('Incomplete native recompute notification; inspect before retry')
+            check_scope(_controller.task)
+            contract = _controller.task.tool_contract
+            if (not contract or name not in contract['permissions']
+                    or name not in contract['names']):
+                raise GuardError('Tool outside the frozen task permissions or profile')
             if name not in getattr(worker, '_commander_tools', set()):
                 raise GuardError('Tool outside the assigned task scope')
             _tool_inflight = True
@@ -235,18 +243,34 @@ def _save_tool(filename):
         return ToolResult(False, '', error=str(exc))
 
 
-def _start_scoped_worker(conversation, system_prompt, **kwargs):
-    global _last_worker
-    registry = kwargs.get('registry')
-    if not registry and _controller.task.mode != 'plan':
-        raise GuardError('Native tool registry is required')
-    if not registry:
-        _originals['_start_worker'](conversation, system_prompt, **kwargs)
-        _last_worker = _dock._worker
-        _last_worker._commander_generation = _controller.task.generation
-        _last_worker._commander_tools = set()
-        _last_worker.error_occurred.connect(_gate.error)
-        return
+def _native_registry(task):
+    check_scope(task)
+    if task.mode == 'plan':
+        return None
+    from freecad_ai.tools.registry import ToolRegistry
+    from freecad_ai.tools.freecad_tools import ALL_TOOLS
+    from freecad_ai.tools.parameter_tools import PARAMETER_TOOLS
+    registry = ToolRegistry()
+    for tool in list(ALL_TOOLS) + list(PARAMETER_TOOLS):
+        registry.register(tool)
+    if any(name.startswith('user_') for name in task.allowed_tools):
+        from freecad_ai.tools.setup import create_default_registry
+        explicit_registry = create_default_registry(include_mcp=False)
+        for name in task.allowed_tools:
+            tool = explicit_registry.get(name)
+            if tool:
+                registry.register(tool)
+    return registry
+
+
+def _prepare_registry(registry):
+    task = _controller.task
+    check_scope(task)
+    if task.mode == 'plan':
+        if registry is not None:
+            raise GuardError('Plan mode cannot receive a native tool registry')
+        freeze_plan(task)
+        return None
     from freecad_ai.tools.registry import ToolDefinition, ToolParam
     registry.register(ToolDefinition('commander_phase',
         'Record Build -> Check -> Repair -> Check -> Saved with evidence. Check requires whole build_complete=true; '
@@ -256,7 +280,25 @@ def _start_scoped_worker(conversation, system_prompt, **kwargs):
     registry.register(ToolDefinition('commander_save',
         'Save the bound native target as a new .FCStd file inside the authorized workspace; sources/checkpoint are protected.',
         [ToolParam('filename', 'string', 'New native output filename or workspace path')], _save_tool))
-    kwargs['filter_names'] = permitted_tools(registry.list_tools(), _controller.task.allowed_tools) | {'commander_phase', 'commander_save'}
+    return ScopedRegistry(registry, _controller.task)
+
+
+def _start_scoped_worker(conversation, system_prompt, **kwargs):
+    global _last_worker
+    registry = kwargs.get('registry')
+    if not registry and _controller.task.mode != 'plan':
+        raise GuardError('Native tool registry is required')
+    registry = _prepare_registry(registry)
+    if registry is None:
+        _originals['_start_worker'](conversation, system_prompt, **kwargs)
+        _last_worker = _dock._worker
+        _last_worker._commander_generation = _controller.task.generation
+        _last_worker._commander_tools = set()
+        _last_worker.error_occurred.connect(_gate.error)
+        return
+    kwargs['registry'] = registry
+    _dock._tool_registry = registry
+    kwargs['filter_names'] = frozenset(_controller.task.tool_contract['names'])
     _originals['_start_worker'](conversation, system_prompt, **kwargs)
     worker = _dock._worker
     worker._commander_generation = _controller.task.generation
@@ -273,21 +315,7 @@ def _continue_send_compact():
     """
     task = _controller.task
     _controller.check(*_active_names())
-    registry = None
-    if task.mode == 'act':
-        from freecad_ai.tools.registry import ToolRegistry
-        from freecad_ai.tools.freecad_tools import ALL_TOOLS
-        from freecad_ai.tools.parameter_tools import PARAMETER_TOOLS
-        registry = ToolRegistry()
-        for tool in list(ALL_TOOLS) + list(PARAMETER_TOOLS):
-            registry.register(tool)
-        if any(name.startswith('user_') for name in task.allowed_tools):
-            from freecad_ai.tools.setup import create_default_registry
-            explicit_registry = create_default_registry(include_mcp=False)
-            for name in task.allowed_tools:
-                tool = explicit_registry.get(name)
-                if tool:
-                    registry.register(tool)
+    registry = _native_registry(task)
     _dock._tool_registry = registry
     doc = App.getDocument(task.target_document)
     objects = doc.Objects
@@ -295,6 +323,7 @@ def _continue_send_compact():
               'workspace': task.workspace, 'protected_sources': task.source_files,
               'reference_summary': task.reference_summary,
               'acceptance_criteria': task.acceptance_criteria,
+              'tool_profile': task.tool_profile, 'required_tools': task.required_tools,
               'object_count': len(objects),
               'object_index_first_40': [{'name': o.Name, 'type': o.TypeId} for o in objects[:40]]}
     system_prompt = task.system_prompt or (
@@ -377,6 +406,7 @@ def submit(payload):
     task = _controller.start(payload, *PROFILES[profile])
     try:
         _controller.check(*_active_names())
+        _prepare_registry(_native_registry(task))
         _ensure_provider(task.workspace)
         if payload.get('new_chat', True):
             provider('/reset', {'acknowledge_state_inspected': True})
@@ -413,7 +443,8 @@ def submit(payload):
         _dock.input_edit.setPlainText(contract + task.prompt)
         _originals['_send_message']()
         _persist()
-        return {'accepted': True, 'task_id': task.id, 'model': task.model, 'effort': task.effort}
+        return {'accepted': True, 'task_id': task.id, 'model': task.model, 'effort': task.effort,
+                'tool_profile': task.tool_profile, 'tool_count': len(task.tool_contract['names'])}
     except Exception as exc:
         _controller.fail(str(exc))
         _persist()
@@ -455,6 +486,7 @@ def resume():
     task = _controller.task
     if not task or not task.reconciled:
         raise GuardError('Inspect/reconcile before Resume')
+    _prepare_registry(_native_registry(task))
     live = provider()
     if live.get('requires_state_inspection'):
         provider('/resume', {'acknowledge_state_inspected': True})
@@ -483,7 +515,7 @@ def _panel_action(action):
         if value and value.get('inspected'):
             message = f"Inspected {value['target_document']}: {value['object_count']} objects. Existing edits remain; Resume is available."
         elif value and value.get('accepted'):
-            message = f"Task started with {value['model']} / {value['effort']}."
+            message = f"Task started with {value['model']} / {value['effort']}; CAD tools: {value['tool_profile']} ({value['tool_count']})."
         elif value and value.get('resumed'):
             message = f"Resumed retained task at {value['phase']}."
         elif value and value.get('stop_requested'):
@@ -513,6 +545,7 @@ def _panel_send():
             bind_target(name)
         references = _attached_reference_summary(name)
         return submit({'prompt': prompt, 'title': prompt[:70], 'profile': _choice.currentText(),
+            'tool_profile': _tool_choice.currentText(),
             'target_document': name, 'expected_revision': inspect()['revision'],
             'workspace': _workspace.text().strip(),
             'source_files': [p.strip() for p in _sources.text().split(';') if p.strip()],
@@ -601,7 +634,7 @@ def _refresh():
         _persist()
     if task and busy and time.time() - task.started_at > task.max_seconds and not task.cancel_requested:
         cancel()
-    for widget in (_choice, _target, _workspace, _sources):
+    for widget in (_choice, _tool_choice, _target, _workspace, _sources):
         widget.setEnabled(not busy)
     model, effort = (task.model, task.effort) if task else PROFILES[_choice.currentText()]
     account = _proxy.get('account', {})
@@ -609,6 +642,8 @@ def _refresh():
     breakdown = _proxy.get('usage_breakdown') or {}
     text = f"Codex | {account.get('planType', 'connecting')} | {model} | {effort}\n"
     text += f'{task.title} | {task.phase} | {task.status}' if task else 'Select target and workspace, then enter a task'
+    if task:
+        text += f"\nCAD tools: {task.tool_profile} | {len(task.tool_contract.get('names', []))} selected"
     if usage:
         text += '\nTokens: ' + str(usage.get('totalTokens', 'unknown'))
     if breakdown:
@@ -635,7 +670,7 @@ def _poll_provider(stop_event):
 
 
 def start():
-    global _dock, _gate, _started, _timer, _label, _choice, _target, _workspace, _sources, _observer, _box, _stop_poll, _poll_thread
+    global _dock, _gate, _started, _timer, _label, _choice, _target, _workspace, _sources, _observer, _box, _stop_poll, _poll_thread, _tool_choice
     if _started:
         _dock.show()
         return status()
@@ -679,6 +714,10 @@ def start():
     _choice.addItems(list(PROFILES))
     _choice.setCurrentText('Standard')
     form.addRow('Model / effort', _choice)
+    _tool_choice = QtWidgets.QComboBox()
+    _tool_choice.addItems([name for name in TOOL_PROFILES if name != 'custom'])
+    _tool_choice.setToolTip('CAD operations for a new task. Resume keeps the original scope.')
+    form.addRow('CAD tools', _tool_choice)
     layout.addLayout(form)
     row = QtWidgets.QHBoxLayout()
     for label, action in (('Refresh targets', _refresh_targets), ('Inspect / reconcile', _panel_reconcile),
@@ -735,3 +774,4 @@ def shutdown():
     _started = False
     _dock = None
     return {'detached': True, 'provider_still_running': bool(_process and _process.poll() is None)}
+

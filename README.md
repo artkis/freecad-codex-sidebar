@@ -17,11 +17,14 @@ queued CAD calls, and Resume requires inspection of the retained state.
 1. Open the intended target document and the FreeCAD AI dock.
 2. Choose **Target document**, an existing **Workspace**, and any **Sources**
    to preserve. Select a model profile: Economical, Standard or Complex.
+   Choose **CAD tools** separately: Inspect (default), Sketch, Solid, Parameters
+   or Export. Use Solid for a sketch/pad or primitive modeling task.
 3. Enter a bounded task. Use Plan for discussion or Act for native tools.
 4. Act saves a checkpoint copy before execution. The task progresses through
    Build → Check → Repair when needed → Check → Saved.
 5. After Stop or failure, inspect the document, use **Inspect / reconcile**,
    then **Resume**. Cancellation preserves edits already made; it is not Undo.
+   Resume retains the original tools and schemas; changed scope requires a new task.
 
 A worker returning text is not a passed geometry check. The panel keeps that
 result pending inspection. The Saved phase requires explicit check evidence
@@ -69,6 +72,9 @@ adds a manual native test using two temporary documents. It checks actual
 FreeCAD observer callbacks, save-copy behavior and transaction rollback;
 it does not run a model or edit existing project documents.
 
+See [task tool profiles](docs/task-tool-profiles.md) for exact tool selection,
+permission enforcement and Resume compatibility.
+
 See [verification scope](docs/verification.md) for the development baseline
 and the limits of the live test.
 
@@ -101,3 +107,4 @@ document targeting and reliable saved-file checks.
 
 See [Support development](docs/SPONSORSHIP.md) for ways to help. Financial
 sponsorship is not currently available.
+
